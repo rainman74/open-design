@@ -593,13 +593,6 @@ export function EntryShell({
   // view from the route rather than keeping it in component state.
   const route = useRoute();
   const view: EntryViewKind = route.kind === 'home' ? route.view : 'home';
-  useEffect(() => {
-    // The entry shell is the authenticated Home surface. A definitive
-    // signed-out result returns it to the Cloud identity gate while leaving
-    // the saved model source untouched for passive reauthentication.
-    if (amrLoggedIn !== false || view === 'onboarding') return;
-    navigate({ kind: 'home', view: 'onboarding' }, { replace: true });
-  }, [amrLoggedIn, view]);
   // The one shared workspace context. Any non-null context is a real workspace
   // (personal or team); workspace surfaces gate on B's permission bits, not on
   // workspaceType.
@@ -2553,8 +2546,10 @@ function OnboardingView({
     modelSourceOptionRefs.current[nextSource]?.focus();
   }
 
-  function continueWithModelSource(): void {
-    if (modelSource === 'amr') {
+  function continueWithModelSource(
+    source: 'amr' | 'local' | 'byok' = modelSource,
+  ): void {
+    if (source === 'amr') {
       emitOnboardingClick('amr_cloud', 'select_runtime', {
         runtime_type: 'amr_cloud',
         is_recommended: true,
@@ -2562,11 +2557,19 @@ function OnboardingView({
       setRuntime('amr');
       onModeChange('daemon');
       onAgentChange('amr');
+      // Hosted is the only model source that bills against an account, so it
+      // is the only one that still has to sign in before onboarding ends.
+      if (!amrSignedIn) {
+        void handleAmrSignInToContinue(null, () =>
+          completeStreamlinedOnboarding('amr_cloud'),
+        );
+        return;
+      }
       completeStreamlinedOnboarding('amr_cloud');
       return;
     }
 
-    if (modelSource === 'local') {
+    if (source === 'local') {
       emitOnboardingClick('local_coding_agent', 'select_runtime', {
         runtime_type: 'local_cli',
       });
@@ -2579,6 +2582,11 @@ function OnboardingView({
     emitOnboardingClick('byok', 'select_runtime', { runtime_type: 'byok' });
     setRuntime('byok');
     setStep(2);
+  }
+
+  function chooseModelSourceWithoutCloud(source: 'local' | 'byok'): void {
+    setModelSource(source);
+    continueWithModelSource(source);
   }
   async function handlePrimaryAction() {
     if (connectStepBlocked) return;
@@ -2625,6 +2633,7 @@ function OnboardingView({
 
   async function handleAmrSignInToContinue(
     attribution?: AmrEntryAttribution | null,
+    onSignedIn?: () => void,
   ) {
     if (amrLoginPending || amrLoginCancelPending) return;
     amrLoginPollCancelledRef.current = false;
@@ -2639,7 +2648,7 @@ function OnboardingView({
         onAmrLoginStatusChange?.(currentStatus);
       }
       if (currentStatus?.loggedIn) {
-        continueAfterCloudSignIn();
+        (onSignedIn ?? continueAfterCloudSignIn)();
         return;
       }
       if (amrLoginPollCancelledRef.current) return;
@@ -2740,7 +2749,7 @@ function OnboardingView({
         return;
       }
       if (await pollAmrLoginCompletion()) {
-        continueAfterCloudSignIn();
+        (onSignedIn ?? continueAfterCloudSignIn)();
       }
     } finally {
       setAmrLoginPending(false);
@@ -3075,8 +3084,8 @@ function OnboardingView({
 
   const primaryActionLabel = t('settings.onboardingContinue');
 
-  // Step 1 is identity only: every user signs into Open Design Cloud before
-  // choosing Hosted, Local, or BYOK on the next screen.
+  // Step 1 offers Open Design Cloud identity. Signing in is optional: the
+  // Local CLI and BYOK alternatives below reach setup without an account.
   if (step === 0) {
     const cloudBusy = amrLoginPending;
     const amrStatusResolving = !amrStatusResolved;
@@ -3171,7 +3180,33 @@ function OnboardingView({
               >
                 {t('settings.amrCancelSignIn')}
               </button>
-            ) : null}
+            ) : (
+              <div
+                className="onboarding-cloud__alts"
+                role="group"
+                aria-label={t('settings.onboardingCloudAlternative')}
+              >
+                <Button
+                  variant="subtle"
+                  className="onboarding-cloud__alt-btn"
+                  onClick={() => chooseModelSourceWithoutCloud('local')}
+                >
+                  <Icon name="robot" size={16} />
+                  {t('settings.onboardingLocalTitle')}
+                </Button>
+                <span className="onboarding-cloud__alts-or">
+                  {t('settings.onboardingCloudOr')}
+                </span>
+                <Button
+                  variant="subtle"
+                  className="onboarding-cloud__alt-btn"
+                  onClick={() => chooseModelSourceWithoutCloud('byok')}
+                >
+                  <Icon name="key" size={16} />
+                  {t('settings.onboardingByokTitle')}
+                </Button>
+              </div>
+            )}
           </div>
           <footer className="onboarding-cloud__footer">
             <LanguageMenu placement="up" align="start" />
@@ -3296,7 +3331,7 @@ function OnboardingView({
             <button
               type="button"
               className="onboarding-cloud__primary"
-              onClick={continueWithModelSource}
+              onClick={() => continueWithModelSource()}
             >
               {t('settings.onboardingContinue')}
             </button>

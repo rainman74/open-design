@@ -15,10 +15,6 @@ import {
 
 test('[P2] captures the onboarding cloud sign-in surface', async ({ page }) => {
   test.setTimeout(T.xlong);
-  test.fail(
-    true,
-    'PR #6475 currently omits anonymous Local Agent and BYOK actions from the sign-in surface.',
-  );
 
   await configureVisualPage(page, {
     projects: [],
@@ -40,7 +36,7 @@ test('[P2] captures the onboarding cloud sign-in surface', async ({ page }) => {
     page.getByRole('button', { name: /Sign in to Open Design|登录 Open Design/i }),
   ).toBeVisible();
   await expect(
-    page.getByRole('button', { name: /Local coding agent|本地 Coding Agent/i }),
+    page.getByRole('button', { name: /Local (coding )?agent|本地 (Coding )?Agent/i }),
   ).toBeVisible();
   await expect(
     page.getByRole('button', { name: /Bring your own key|自己的模型 Key/i }),

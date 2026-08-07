@@ -637,7 +637,7 @@ describe('EntryShell Home submit handoff', () => {
 });
 
 describe('EntryShell onboarding Open Design AMR runtime', () => {
-  it('gates Home on an authoritative signed-out Cloud session without clearing saved setup', async () => {
+  it('keeps a signed-out user on Home instead of forcing a Cloud sign-in', async () => {
     globalThis.fetch = vi.fn(async () =>
       jsonResponse({ loggedIn: false, profile: 'prod', configPath: '/x', user: null }),
     ) as typeof fetch;
@@ -650,13 +650,29 @@ describe('EntryShell onboarding Open Design AMR runtime', () => {
     });
     const props = renderHome({ config, amrLoggedIn: false });
 
+    expect(await screen.findByTestId('home-hero-input')).toBeTruthy();
+    expect(window.location.pathname).toBe('/');
     expect(
-      await screen.findByRole('heading', { name: 'Sign in to Open Design' }),
-    ).toBeTruthy();
-    expect(window.location.pathname).toBe('/onboarding');
+      screen.queryByRole('heading', { name: 'Sign in to Open Design' }),
+    ).toBeNull();
     expect(props.onConfigPersist).not.toHaveBeenCalled();
     expect(props.onModeChange).not.toHaveBeenCalled();
     expect(props.onAgentChange).not.toHaveBeenCalled();
+  });
+
+  it('reaches BYOK setup from the identity screen without signing in', async () => {
+    globalThis.fetch = vi.fn(async () =>
+      jsonResponse({ loggedIn: false, profile: 'prod', configPath: '/x', user: null }),
+    ) as typeof fetch;
+    renderOnboarding();
+
+    fireEvent.click(
+      await screen.findByRole('button', { name: /Bring Your Own Key/i }),
+    );
+
+    expect(
+      await screen.findByRole('heading', { name: 'Bring Your Own Key' }),
+    ).toBeTruthy();
   });
 
   it('shows the model-source chooser after Cloud sign-in without exposing legacy onboarding steps', async () => {
@@ -916,8 +932,9 @@ describe('EntryShell onboarding Open Design AMR runtime', () => {
     await waitFor(() => {
       expect(props.onAgentChange).not.toHaveBeenCalledWith('amr');
     });
-    expect(screen.queryByRole('button', { name: /Local Agent/i })).toBeNull();
-    expect(screen.queryByRole('button', { name: /Bring Your Own Key/i })).toBeNull();
+    // The no-account alternatives stay reachable even without an AMR runtime.
+    expect(screen.getByRole('button', { name: /Local Agent/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Bring Your Own Key/i })).toBeTruthy();
     expect(screen.queryByText('Sign in to continue')).toBeNull();
   });
 
@@ -934,9 +951,9 @@ describe('EntryShell onboarding Open Design AMR runtime', () => {
     expect(screen.queryByText('AMR v0.1.0')).toBeNull();
     expect(screen.queryByRole('button', { name: /Sign in to continue/i })).toBeNull();
     expect(screen.queryByRole('link', { name: /Authorize AMR/i })).toBeNull();
-    // Model-source choices stay behind the mandatory identity gate.
-    expect(screen.queryByRole('button', { name: /Local Agent/i })).toBeNull();
-    expect(screen.queryByRole('button', { name: /Bring Your Own Key/i })).toBeNull();
+    // Cloud is the recommended default, but signing in stays optional.
+    expect(screen.getByRole('button', { name: /Local Agent/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Bring Your Own Key/i })).toBeTruthy();
     expect(screen.queryByRole('button', { name: /Open Design AMR/i })).toBeNull();
     expect(screen.queryByRole('link', { name: /Authorize AMR/i })).toBeNull();
     expect(screen.queryByText('Not signed in')).toBeNull();
@@ -1150,7 +1167,7 @@ describe('EntryShell onboarding Open Design AMR runtime', () => {
       name: /Sign in to Open Design/i,
     });
     expect(cloudButton.hasAttribute('disabled')).toBe(false);
-    expect(screen.queryByRole('button', { name: /Local Agent/i })).toBeNull();
+    expect(screen.getByRole('button', { name: /Local Agent/i })).toBeTruthy();
 
     fireEvent.click(cloudButton);
     await act(async () => {});
@@ -1695,8 +1712,9 @@ describe('EntryShell onboarding Open Design AMR runtime', () => {
     expect((primary as HTMLButtonElement).disabled).toBe(true);
     expect(document.querySelector('.onboarding-view__card--skeleton')).toBeNull();
     expect(screen.queryByRole('button', { name: /Open Design AMR/i })).toBeNull();
-    expect(screen.queryByRole('button', { name: /Local Agent/i })).toBeNull();
-    expect(screen.queryByRole('button', { name: /Bring Your Own Key/i })).toBeNull();
+    // The no-account alternatives never wait on the Cloud status probe.
+    expect(screen.getByRole('button', { name: /Local Agent/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Bring Your Own Key/i })).toBeTruthy();
   });
 
   it('renders the cloud sign-in CTA and no legacy AMR card once AMR is available', async () => {

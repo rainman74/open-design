@@ -53,7 +53,7 @@ function amrAgentToggle(settings: Locator): Locator {
   return settings.getByTestId('settings-agent-card-amr').getByRole('button').first();
 }
 
-test('[P0] after local Sign out, the app returns to onboarding and AMR runs require re-login without clearing setup', async ({ page }) => {
+test('[P0] after local Sign out, the app stays usable and AMR runs require re-login without clearing setup', async ({ page }) => {
   await stubCatalogsEmpty(page);
   const root = join(tmpdir(), `open-design-amr-logout-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
   const reloginVelaBin = await writeFakeVelaBin(join(root, 'bin-relogin'), {
@@ -132,14 +132,16 @@ test('[P0] after local Sign out, the app returns to onboarding and AMR runs requ
     const response = await fetch('/api/integrations/vela/logout', { method: 'POST' });
     if (!response.ok) throw new Error(`logout failed: ${response.status}`);
   });
-  // A definitive signed-out Cloud status now gates the entry on onboarding.
-  // This is passive session loss (the logout endpoint was called directly),
-  // so the saved AMR setup must survive for reauthentication.
+  // Passive session loss (the logout endpoint was called directly) must not
+  // evict the user from the app: Home stays reachable without an account and
+  // the saved AMR setup survives for reauthentication. Only the AMR run below
+  // demands a fresh sign-in.
   await page.goto('/', { waitUntil: 'domcontentloaded' });
-  await expect(page).toHaveURL(/\/onboarding$/, { timeout: T.long });
+  await expect(page.getByTestId('home-hero-input')).toBeVisible({ timeout: T.long });
+  await expect(page).toHaveURL(/\/$/);
   await expect(
     page.getByRole('heading', { name: /Sign in to Open Design|登录 Open Design/i }),
-  ).toBeVisible();
+  ).toHaveCount(0);
   await expect.poll(() => page.evaluate(() => {
     const raw = window.localStorage.getItem('open-design:config');
     return raw ? JSON.parse(raw) : null;

@@ -83,10 +83,6 @@ test('[P0] @critical onboarding lets AMR Cloud sign in and complete setup after 
 });
 
 test('[P0] signed-out onboarding keeps Local Agent and BYOK available without Cloud authorization', async ({ page }) => {
-  test.fail(
-    true,
-    'PR #6475 currently hides anonymous Local Agent and BYOK behind Cloud sign-in.',
-  );
   const config = await wireOnboardingMocks(page, {
     amrAvailable: true,
     initialLoggedIn: false,
@@ -460,7 +456,7 @@ test('[P0] active Cloud sign-out clears execution setup, preserves unrelated pre
 test('[P0] signed-out users can open Home directly without completing onboarding', async ({ page }) => {
   test.fail(
     true,
-    'PR #6475 currently redirects anonymous Home access to onboarding.',
+    'First-run routing still sends an uncompleted onboarding config to /onboarding, independently of Cloud sign-in.',
   );
   const config = await wireOnboardingMocks(page, {
     amrAvailable: true,
@@ -489,7 +485,7 @@ for (const destination of [
   test(`[P0] signed-out users can open ${destination.name} directly`, async ({ page }) => {
     test.fail(
       true,
-      `PR #6475 currently redirects anonymous ${destination.name} access to onboarding.`,
+      `First-run routing still sends an uncompleted onboarding config to /onboarding before ${destination.name} renders.`,
     );
     const config = await wireOnboardingMocks(page, {
       amrAvailable: true,
