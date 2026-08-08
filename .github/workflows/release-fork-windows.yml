@@ -117,7 +117,9 @@ jobs:
             echo "packaged config baked namespaceBaseRoot; build was not portable" >&2
             exit 1
           fi
-          test -x "${{ steps.build.outputs.unpacked_path }}/Open Open Design.exe"
+          # electron-builder pins executableName to the canonical product name,
+          # so the binary stays "Open Design.exe" even under a custom productName.
+          test -f "${{ steps.build.outputs.unpacked_path }}/Open Design.exe"
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v7
