@@ -1,0 +1,141 @@
+name: release-fork-macos
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing GitHub release tag to receive the DMGs.
+        required: true
+        type: string
+        default: open-open-design-v0.18.1
+      release_version:
+        description: Version baked into both macOS packages.
+        required: true
+        type: string
+        default: 0.18.1
+
+permissions:
+  contents: write
+
+concurrency:
+  group: open-open-design-macos-${{ inputs.release_tag }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build macOS ${{ matrix.arch }} DMG
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-14
+          - arch: x64
+            runner: macos-15-intel
+    runs-on: ${{ matrix.runner }}
+    env:
+      OD_PACKAGED_PRODUCT_NAME: Open Open Design
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6.0.2
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v5
+        with:
+          version: 10.33.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build unsigned DMG
+        id: build
+        shell: bash
+        run: |
+          set -euo pipefail
+          build_json="$RUNNER_TEMP/mac-tools-pack-build.json"
+          build_output="$(pnpm exec tools-pack mac build \
+            --dir "$RUNNER_TEMP/tools-pack" \
+            --namespace open-open-design \
+            --portable \
+            --app-version "${{ inputs.release_version }}" \
+            --to dmg \
+            --json)"
+          printf '%s\n' "$build_output" | tee "$build_json"
+          dmg_path="$(jq -r '.dmgPath // empty' "$build_json")"
+          if [ -z "$dmg_path" ] || [ ! -f "$dmg_path" ]; then
+            echo "tools-pack did not produce a DMG: $dmg_path" >&2
+            exit 1
+          fi
+          asset_dir="$RUNNER_TEMP/release-assets"
+          asset_name="open-open-design-${{ inputs.release_version }}-mac-${{ matrix.arch }}.dmg"
+          mkdir -p "$asset_dir"
+          cp "$dmg_path" "$asset_dir/$asset_name"
+          (cd "$asset_dir" && shasum -a 256 "$asset_name" > "$asset_name.sha256")
+          echo "asset_name=$asset_name" >> "$GITHUB_OUTPUT"
+
+      - name: Verify DMG identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          asset="$RUNNER_TEMP/release-assets/${{ steps.build.outputs.asset_name }}"
+          mount_point="$RUNNER_TEMP/open-open-design-dmg"
+          mkdir -p "$mount_point"
+          hdiutil attach "$asset" -mountpoint "$mount_point" -nobrowse -readonly
+          trap 'hdiutil detach "$mount_point" || true' EXIT
+          app="$mount_point/Open Open Design.app"
+          test -d "$app"
+          test -x "$app/Contents/MacOS/Open Open Design"
+          test "$(plutil -extract CFBundleShortVersionString raw "$app/Contents/Info.plist")" = "${{ inputs.release_version }}"
+          test "$(plutil -extract CFBundleDisplayName raw "$app/Contents/Info.plist")" = "Open Open Design"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: open-open-design-mac-${{ matrix.arch }}
+          path: ${{ runner.temp }}/release-assets/*
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Publish macOS DMGs
+    needs: build
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Download DMGs
+        uses: actions/download-artifact@v8
+        with:
+          pattern: open-open-design-mac-*
+          path: ${{ runner.temp }}/release-assets
+          merge-multiple: true
+
+      - name: Upload DMGs to existing prerelease
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release view "${{ inputs.release_tag }}" --repo "$GITHUB_REPOSITORY" >/dev/null
+          gh release upload "${{ inputs.release_tag }}" \
+            "$RUNNER_TEMP/release-assets"/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber
+
+      - name: Publish summary
+        shell: bash
+        run: |
+          {
+            echo "## Open Open Design macOS packages"
+            echo
+            echo "- release: ${{ inputs.release_tag }}"
+            echo "- version: ${{ inputs.release_version }}"
+            echo "- product: Open Open Design"
+            echo "- packages: arm64 DMG, x64 DMG"
+            echo "- signing: unsigned"
+          } >> "$GITHUB_STEP_SUMMARY"

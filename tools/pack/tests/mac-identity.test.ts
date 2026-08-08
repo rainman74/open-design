@@ -44,6 +44,24 @@ function makeConfig(root: string, namespace: string): ToolPackConfig {
 }
 
 describe("resolveMacInstallIdentity", () => {
+  it("uses an explicit fork product name across the macOS bundle identity", () => {
+    const config = {
+      ...makeConfig("/work", "open-open-design"),
+      appVersion: "0.18.1",
+      productName: "Open Open Design",
+    };
+
+    expect(resolveMacInstallIdentity(config)).toEqual({
+      appId: "io.open-design.desktop",
+      executableName: "Open Open Design",
+      installerTitle: "Open Open Design",
+      productName: "Open Open Design",
+      publicAppBundleName: "Open Open Design.app",
+      systemAppBundleName: "Open Open Design.app",
+    });
+    expect(resolveMacPaths(config).appPath).toMatch(/Open Open Design\.app$/);
+  });
+
   it("keeps stable builds on the canonical mac identity", () => {
     expect(resolveMacInstallIdentity(makeConfig("/work", "release-stable"))).toMatchObject({
       appId: "io.open-design.desktop",

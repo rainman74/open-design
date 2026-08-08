@@ -21,22 +21,24 @@ function sanitizeNamespace(value: string): string {
   return value.replace(/[^A-Za-z0-9._-]+/g, "-");
 }
 
-export function resolveMacInstallIdentity(config: Pick<ToolPackConfig, "namespace" | "appVersion">): MacInstallIdentity {
+export function resolveMacInstallIdentity(config: Pick<ToolPackConfig, "namespace" | "appVersion" | "productName">): MacInstallIdentity {
   const namespaceToken = sanitizeNamespace(config.namespace);
   const channel = releaseChannelFromVersion(config.appVersion)
     ?? releaseChannelFromNamespace(config.namespace, SIDECAR_DEFAULTS.namespace);
   const channelIdentity = channel == null
     ? { appId: "io.open-design.desktop", productName: PRODUCT_NAME }
     : releaseInstallIdentity(channel);
-  const publicAppBundleName = `${channelIdentity.productName}.app`;
-  const systemAppBundleName = channel != null
+  const productName = config.productName ?? channelIdentity.productName;
+  const publicAppBundleName = `${productName}.app`;
+  const systemAppBundleName = config.productName != null || channel != null
     ? publicAppBundleName
     : `${PRODUCT_NAME}.${namespaceToken}.app`;
 
   return {
     ...channelIdentity,
-    executableName: channelIdentity.productName,
-    installerTitle: channel == null ? `${PRODUCT_NAME}-${namespaceToken}` : channelIdentity.productName,
+    executableName: productName,
+    installerTitle: config.productName == null && channel == null ? `${PRODUCT_NAME}-${namespaceToken}` : productName,
+    productName,
     publicAppBundleName,
     systemAppBundleName,
   };
